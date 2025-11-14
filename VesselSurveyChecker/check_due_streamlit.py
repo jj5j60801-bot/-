@@ -101,7 +101,7 @@ df = pd.DataFrame(all_results)
 # 只顯示有到期檢驗的船名（PDF檔案名）
 vessel_names = sorted(df["檔案"].unique())
 
-st.markdown("#### 船舶有下列到期檢驗：")
+st.markdown("#### 檢驗到期船舶：")
 if vessel_names:
     for name in vessel_names:
         st.markdown(f"- {name}")
@@ -116,5 +116,6 @@ if vessel_names:
         st.dataframe(vessel_df)
 else:
     st.info("目前無任何船舶到期檢驗。")
+
 
 
