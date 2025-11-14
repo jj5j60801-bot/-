@@ -1,8 +1,9 @@
 import datetime
 import re
-from PyPDF2 import PdfReader
-import streamlit as st
 import os
+from PyPDF2 import PdfReader
+import pandas as pd
+import streamlit as st
 
 IGNORED_KEYWORDS = [
     "Force MajeureStatus","Status","Not Due","Unknown","Due Range",
@@ -71,13 +72,17 @@ def extract_due_dates(pdf_path):
     return due_items
 
 st.title("全船隊PDF檢驗到期查詢")
-import os
+
 pdf_folder = os.path.join(os.path.dirname(__file__), "pdfs")
 today = datetime.date.today()
 days_limit = st.number_input('列出幾天內到期（例：90）', min_value=1, value=90)
 
 all_results = []
-pdf_files = [os.path.join(pdf_folder, f) for f in os.listdir(pdf_folder) if f.lower().endswith(".pdf")]
+pdf_files = [
+    os.path.join(pdf_folder, f)
+    for f in os.listdir(pdf_folder)
+    if f.lower().endswith(".pdf")
+]
 
 for pdf in pdf_files:
     due_list = extract_due_dates(pdf)
@@ -91,10 +96,17 @@ for pdf in pdf_files:
                 "剩餘天數": days_left
             })
 
-if all_results:
-    st.dataframe(all_results)
+df = pd.DataFrame(all_results)
+
+keyword = st.text_input("快速搜尋（項目名/檔名）")
+if keyword:
+    df = df[df.apply(lambda row: keyword.lower() in str(row).lower(), axis=1)]
+
+if not df.empty:
+    st.dataframe(df)
 else:
-    st.info("所有PDF中無項目即將到期。")
+    st.info("查無符合搜尋條件之記錄。")
+
 
 
 
