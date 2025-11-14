@@ -98,15 +98,11 @@ for pdf in pdf_files:
 
 df = pd.DataFrame(all_results)
 
-keyword = st.text_input("快速搜尋（項目名/檔名）")
-if keyword:
-    df = df[df.apply(lambda row: keyword.lower() in str(row).lower(), axis=1)]
+# 首頁選船名，只顯示有到期的船舶
+vessel_names = sorted(df["檔案"].unique())
+selected_vessel = st.selectbox("請選擇船舶檔案（只顯示到期船名）", vessel_names)
 
-if not df.empty:
-    st.dataframe(df)
-else:
-    st.info("查無符合搜尋條件之記錄。")
-
-
-
-
+if selected_vessel:
+    details = df[df["檔案"] == selected_vessel]
+    st.subheader(f"{selected_vessel} 檢驗到期明細")
+    st.dataframe(details)  # 只顯示該船所有到期項目
