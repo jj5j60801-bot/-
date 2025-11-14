@@ -71,7 +71,8 @@ def extract_due_dates(pdf_path):
     return due_items
 
 st.title("全船隊PDF檢驗到期查詢")
-pdf_folder = "pdfs"
+import os
+pdf_folder = os.path.join(os.path.dirname(__file__), "pdfs")
 today = datetime.date.today()
 days_limit = st.number_input('列出幾天內到期（例：90）', min_value=1, value=90)
 
@@ -94,5 +95,6 @@ if all_results:
     st.dataframe(all_results)
 else:
     st.info("所有PDF中無項目即將到期。")
+
 
 
