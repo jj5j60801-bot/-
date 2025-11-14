@@ -98,11 +98,23 @@ for pdf in pdf_files:
 
 df = pd.DataFrame(all_results)
 
-# 首頁選船名，只顯示有到期的船舶
+# 只顯示有到期檢驗的船名（PDF檔案名）
 vessel_names = sorted(df["檔案"].unique())
-selected_vessel = st.selectbox("請選擇船舶檔案（只顯示到期船名）", vessel_names)
 
-if selected_vessel:
-    details = df[df["檔案"] == selected_vessel]
-    st.subheader(f"{selected_vessel} 檢驗到期明細")
-    st.dataframe(details)  # 只顯示該船所有到期項目
+st.markdown("#### 船舶有下列到期檢驗：")
+if vessel_names:
+    for name in vessel_names:
+        st.markdown(f"- {name}")
+
+    # 用戶選擇船舶查細項：下拉菜單
+    selected_vessel = st.selectbox("請選擇船舶檔案（只顯示到期船名）", vessel_names)
+
+    # 被選擇才顯示明細
+    vessel_df = df[df["檔案"] == selected_vessel]
+    if not vessel_df.empty:
+        st.subheader(f"{selected_vessel} 檢驗到期明細")
+        st.dataframe(vessel_df)
+else:
+    st.info("目前無任何船舶到期檢驗。")
+
+
