@@ -117,4 +117,4 @@ else:
         else:
             st.info("此船未找到符號主分類的項目。")
     else:
-        st.info("目前無
+        st.info("目前無任何船舶到期檢驗。")
