@@ -63,23 +63,39 @@ def extract_due_dates_cr_ccs(lines):
 def extract_due_dates_abs(lines):
     due_items, seen = [], set()
     prev_name = ""
-    for line in lines:
+    for i, line in enumerate(lines):
         has_major = any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS)
+        # 遇到帶Range Date行直接略過
+        if "range date" in line.lower():
+            continue
+        # 主名稱若同行直接用日期
         if has_major:
+            dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
+            if len(dates) == 1:
+                namepure = remove_dates_from_name(line)
+                due_date = parse_date(dates[0])
+                if due_date and is_major_check_item(namepure) and len(namepure) > 2:
+                    key = (namepure, due_date)
+                    if key not in seen:
+                        seen.add(key)
+                        due_items.append((namepure, due_date))
             prev_name = line.strip()
             continue
-        for match in re.finditer(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line):
-            due_date = parse_date(match.group(1))
-            namepure = remove_dates_from_name(prev_name)
-            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                key = (namepure, due_date)
-                if key not in seen:
-                    seen.add(key)
-                    due_items.append((namepure, due_date))
+        # 名稱/日期分列模式
+        if prev_name:
+            dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
+            if len(dates) == 1:
+                namepure = remove_dates_from_name(prev_name)
+                due_date = parse_date(dates[0])
+                if due_date and is_major_check_item(namepure) and len(namepure) > 2:
+                    key = (namepure, due_date)
+                    if key not in seen:
+                        seen.add(key)
+                        due_items.append((namepure, due_date))
     return due_items
 
 def extract_due_dates_default(lines):
-    # fallback-最簡單單行模式（如未列入品牌自動套此）
+    # fallback最簡單：前一行碰關鍵字為名稱，本行有唯一日期即收
     due_items, seen = [], set()
     prev_name = ""
     for line in lines:
