@@ -5,6 +5,13 @@ from PyPDF2 import PdfReader
 import pandas as pd
 import streamlit as st
 
+# 密碼保護，可自行更改
+PASSWORD = "yourpassword123"
+input_pwd = st.text_input("請輸入密碼：", type="password")
+if input_pwd != PASSWORD:
+    st.warning("ENGX")
+    st.stop()
+
 IGNORED_KEYWORDS = [
     "Force MajeureStatus","Status","Not Due","Unknown","Due Range",
     "Survey Manager","Report","ABS","DNV","Airpipe Closing Device","Device Examination"
@@ -98,7 +105,7 @@ for pdf in pdf_files:
 
 df = pd.DataFrame(all_results)
 
-# 只顯示有到期檢驗的船名（無 .pdf）
+# 只顯示有到期檢驗的船名（去掉 .pdf）
 vessel_names = sorted(set(name.replace('.pdf', '') for name in df["檔案"].unique()))
 
 st.markdown("#### 檢驗到期船舶：")
