@@ -65,37 +65,30 @@ def extract_due_dates_abs(lines):
     prev_name = ""
     for i, line in enumerate(lines):
         has_major = any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS)
-        # 遇到帶Range Date行直接略過
-        if "range date" in line.lower():
-            continue
-        # 主名稱若同行直接用日期
-        if has_major:
-            dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
-            if len(dates) == 1:
-                namepure = remove_dates_from_name(line)
-                due_date = parse_date(dates[0])
-                if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                    key = (namepure, due_date)
-                    if key not in seen:
-                        seen.add(key)
-                        due_items.append((namepure, due_date))
+        # 抓同行只有一個日期的，才認定純Due Date，排除一行多日期（＝有Range Date）
+        dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
+        if has_major and len(dates) == 1:
+            namepure = remove_dates_from_name(line)
+            due_date = parse_date(dates[0])
+            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
+                key = (namepure, due_date)
+                if key not in seen:
+                    seen.add(key)
+                    due_items.append((namepure, due_date))
             prev_name = line.strip()
-            continue
-        # 名稱/日期分列模式
-        if prev_name:
-            dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
-            if len(dates) == 1:
-                namepure = remove_dates_from_name(prev_name)
-                due_date = parse_date(dates[0])
-                if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                    key = (namepure, due_date)
-                    if key not in seen:
-                        seen.add(key)
-                        due_items.append((namepure, due_date))
+        elif has_major:
+            prev_name = line.strip()
+        elif prev_name and len(dates) == 1:
+            namepure = remove_dates_from_name(prev_name)
+            due_date = parse_date(dates[0])
+            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
+                key = (namepure, due_date)
+                if key not in seen:
+                    seen.add(key)
+                    due_items.append((namepure, due_date))
     return due_items
 
 def extract_due_dates_default(lines):
-    # fallback最簡單：前一行碰關鍵字為名稱，本行有唯一日期即收
     due_items, seen = [], set()
     prev_name = ""
     for line in lines:
@@ -148,7 +141,6 @@ for pdf in pdf_files:
             })
 
 df = pd.DataFrame(all_results)
-
 if df.empty:
     st.info("未解析出任何到期檢查項目。")
 else:
