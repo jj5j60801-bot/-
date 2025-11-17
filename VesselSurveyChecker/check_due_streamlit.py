@@ -5,7 +5,7 @@ import pandas as pd
 from PyPDF2 import PdfReader
 import streamlit as st
 
-PASSWORD = "yourpassword123"
+PASSWORD = "ENGX"
 input_pwd = st.text_input("請輸入密碼：", type="password")
 if input_pwd != PASSWORD:
     st.warning("請輸入正確密碼")
@@ -38,36 +38,39 @@ def remove_dates_from_name(name):
 
 def extract_due_dates(pdf_path):
     reader = PdfReader(pdf_path)
-    text = ""
+    lines = []
     for page in reader.pages:
         txt = page.extract_text()
         if txt:
-            text += txt + "\n"
-    lines = text.splitlines()
+            lines += txt.splitlines()
     due_items = []
     seen = set()
-    for line in lines:
-        # 針對CR/CCS：整行包含主檢查+多日期，只取最右者
-        if any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS):
-            dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
+    prev_name = ""
+    for i, line in enumerate(lines):
+        has_major = any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS)
+        dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
+        # CR/CCS/WH101格式：同一行同時有主檢查與多個日期
+        if has_major and len(dates) >= 1:
             namepure = remove_dates_from_name(line)
-            if len(dates) >= 1:
-                due_date = parse_date(dates[-1])
-                if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                    key = (namepure, due_date)
-                    if key not in seen:
-                        seen.add(key)
-                        due_items.append((namepure, due_date))
-        else:
-            # 傳統單行 (如ABS/DNV等格式保持)
-            for match in re.finditer(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line):
-                due_date = parse_date(match.group(1))
-                prev_name = remove_dates_from_name(line)
-                if due_date and is_major_check_item(prev_name) and len(prev_name) > 2:
-                    key = (prev_name, due_date)
-                    if key not in seen:
-                        seen.add(key)
-                        due_items.append((prev_name, due_date))
+            due_date = parse_date(dates[-1])
+            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
+                key = (namepure, due_date)
+                if key not in seen:
+                    seen.add(key)
+                    due_items.append((namepure, due_date))
+            prev_name = line.strip()
+            continue
+        # ABS/DNV一行主名稱一行日期格式
+        if not has_major and len(dates) == 1:
+            due_date = parse_date(dates[0])
+            namepure = remove_dates_from_name(prev_name)
+            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
+                key = (namepure, due_date)
+                if key not in seen:
+                    seen.add(key)
+                    due_items.append((namepure, due_date))
+        if has_major:
+            prev_name = line.strip()
     return due_items
 
 st.title("全船隊PDF檢驗到期查詢")
@@ -114,4 +117,4 @@ else:
         else:
             st.info("此船未找到符號主分類的項目。")
     else:
-        st.info("目前無任何船舶到期檢驗。")
+        st.info("目前無
