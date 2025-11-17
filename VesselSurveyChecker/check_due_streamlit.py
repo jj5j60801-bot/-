@@ -12,9 +12,13 @@ if input_pwd != PASSWORD:
     st.stop()
 
 MAJOR_KEYWORDS = [
-    "Class Annual Survey", "Class Intermediate Survey", "Class Special Survey",
-    "Continuous Survey", "Boiler Survey", "Tailshaft Survey",
-    "Screwshaft Survey", "Propeller Shaft"
+    "Class Annual Survey", "Annual Survey", "Class Intermediate Survey", "Intermediate Survey",
+    "Special Survey", "Class Special Survey", "Continuous Survey", "Main class annual",
+    "Main class intermediate", "Main class renewal", "Annual Automation Survey", "Annual Hull Survey",
+    "Annual Machinery Survey", "Special Continuous Survey", "Special Periodical Survey",
+    "Drydocking Survey", "Boiler Survey", "Auxiliary Boiler", "Screwshaft Survey", "Propeller Shaft",
+    "Tailshaft Survey", "Tail Shaft", "Propeller Shaft Condition Monitoring", "Propeller Shaft Survey",
+    "Machinery items", "Hull items", "Cargo Gear Load Test", "BTS"
 ]
 
 def parse_date(raw_date):
@@ -26,7 +30,7 @@ def parse_date(raw_date):
     return None
 
 def is_major_check_item(name):
-    return any(name.strip().startswith(kw) for kw in MAJOR_KEYWORDS)
+    return any(kw.lower() in name.lower() for kw in MAJOR_KEYWORDS)
 
 def extract_due_dates(pdf_path):
     reader = PdfReader(pdf_path)
@@ -40,10 +44,12 @@ def extract_due_dates(pdf_path):
     seen = set()
     prev_name = ""
     for line in lines:
+        # 先抓主檢查名稱行
         for kw in MAJOR_KEYWORDS:
-            if line.strip().startswith(kw):
+            if kw.lower() in line.lower():
                 prev_name = line.strip()
-                break  # 只要命中主名稱開頭即設定
+                break
+        # 每行所有日期配最近主檢查名稱
         for match in re.finditer(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line):
             due_date = parse_date(match.group(1))
             name = prev_name
@@ -78,7 +84,6 @@ for pdf in pdf_files:
                 "到期日": due_date.strftime("%Y-%m-%d"),
                 "剩餘天數": days_left
             })
-
 df = pd.DataFrame(all_results)
 
 if df.empty:
