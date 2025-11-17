@@ -5,8 +5,7 @@ import pandas as pd
 from PyPDF2 import PdfReader
 import streamlit as st
 
-# 密碼保護設定
-PASSWORD = "yourpassword123"
+PASSWORD = "123"
 input_pwd = st.text_input("請輸入密碼：", type="password")
 if input_pwd != PASSWORD:
     st.warning("請輸入正確密碼")
@@ -41,13 +40,11 @@ def is_meaningful_name(name):
     return True
 
 def parse_date(raw_date):
-    """ 智慧自動判斷三種格式 """
     for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%d%b%Y", "%d-%b-%Y"):
         try:
             return datetime.datetime.strptime(raw_date, fmt).date()
         except Exception:
             continue
-    # 若無法直接格式化，可考慮清理逗號或空格重試
     return None
 
 def extract_due_dates(pdf_path):
@@ -61,23 +58,15 @@ def extract_due_dates(pdf_path):
     lines = text.splitlines()
     due_items = []
     seen = set()
-
-    # 支援 yyyy-mm-dd, dd-MMM-yyyy, dd/MM/yyyy, ddMMMYYYY (CR格式)
     date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|\d{2}[A-Z]{3}\d{4})")
 
     for i, line in enumerate(lines):
         matches = list(date_pattern.finditer(line))
         if not matches:
             continue
-
-        # 特例處理 CR檢查項（行內多日期時）
         if len(matches) >= 2 and len(line.strip()) > 10:
-            # 嘗試切割欄位（一般格式 e.g. [item] [date1] [date2] ...）
             columns = re.split(r"\s{2,}", line.strip())
-            # 適用 CR: [項目名稱, Last Survey, Due, ..]
-            # 抓最後一個日期做為到期日，第一欄必須是文字
             if len(columns) >= 3 and re.match(r"[A-Za-z]", columns[0]):
-                # 嘗試判斷名字及最後一個日期
                 name = columns[0]
                 raw_date = columns[-1]
                 due_date = parse_date(raw_date)
@@ -86,9 +75,7 @@ def extract_due_dates(pdf_path):
                     if key not in seen:
                         seen.add(key)
                         due_items.append((name, due_date))
-                continue  # 跳至下一行
-
-        # 標準處理：單一日期時
+                continue
         for match in matches:
             raw_date = match.group(1)
             due_date = parse_date(raw_date)
@@ -128,8 +115,11 @@ for pdf in pdf_files:
 
 df = pd.DataFrame(all_results)
 
-# 只顯示有到期檢驗的船名（去掉 .pdf）
-vessel_names = sorted(set(name.replace('.pdf', '') for name in df["檔案"].unique()))
+# 只取主要分類（如含Class Survey的檢查）
+main_keywords = ["Class Survey"]   # 可自行調整、增加
+main_df = df[df["項目名稱"].str.contains("|".join(main_keywords), case=False, na=False)]
+
+vessel_names = sorted(set(name.replace('.pdf', '') for name in main_df["檔案"].unique()))
 
 st.markdown("#### 檢驗到期船舶：")
 if vessel_names:
@@ -137,8 +127,9 @@ if vessel_names:
         st.markdown(f"- {name}")
     selected_vessel = st.selectbox("請選擇船舶檔案（只顯示到期船名）", vessel_names)
     real_vessel_file = selected_vessel + ".pdf"
-    vessel_df = df[df["檔案"] == real_vessel_file]
+    vessel_df = main_df[main_df["檔案"] == real_vessel_file]
     if not vessel_df.empty:
-        st.subheader(f"{selected_vessel} 檢驗到期明細")
+        st.subheader(f"{selected_vessel} 檢驗到期明細 (主分類)")
         st.dataframe(vessel_df)
 else:
+    st.info("目前無任何船舶到期檢驗。")
