@@ -40,7 +40,7 @@ def is_meaningful_name(name):
     return True
 
 def parse_date(raw_date):
-    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%d%b%Y", "%d-%b-%Y", "%d-%b-%y"):
+    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%Y/%m/%d", "%d%b%Y", "%Y.%m.%d"):
         try:
             return datetime.datetime.strptime(raw_date, fmt).date()
         except Exception:
@@ -58,24 +58,37 @@ def extract_due_dates(pdf_path):
     lines = text.splitlines()
     due_items = []
     seen = set()
-    date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|\d{2}[A-Z]{3}\d{4})")
+    date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|\d{4}/\d{2}/\d{2}|\d{2}[A-Z]{3}\d{4}|\d{4}\.\d{2}\.\d{2})")
 
+    in_cr_table = False
+    cr_table_headers = ["Survey Description", "Next Survey Date", "到期日"]
     for i, line in enumerate(lines):
-        matches = list(date_pattern.finditer(line))
-        if not matches:
+        if any(header in line for header in cr_table_headers):
+            in_cr_table = True
             continue
-        if len(matches) >= 2 and len(line.strip()) > 10:
-            columns = re.split(r"\s{2,}", line.strip())
-            if len(columns) >= 3 and re.match(r"[A-Za-z]", columns[0]):
-                name = columns[0]
-                raw_date = columns[-1]
-                due_date = parse_date(raw_date)
-                if due_date and is_meaningful_name(name):
-                    key = (name, due_date)
-                    if key not in seen:
-                        seen.add(key)
-                        due_items.append((name, due_date))
+
+        # CR/CCS表格主體專屬解法，直至遇到空列或其他大標
+        if in_cr_table:
+            if not line.strip() or re.match(r"^[A-Za-z].*:$", line):
+                in_cr_table = False
                 continue
+            cols = re.split(r"\s{2,}", line.strip())
+            if len(cols) >= 3:
+                name = cols[0].strip()
+                # 盡量抓最右的日期欄(Next Survey/到期日)
+                for idx in range(2, len(cols)):
+                    due_val = cols[idx].strip()
+                    due_date = parse_date(due_val)
+                    if due_date and is_meaningful_name(name):
+                        key = (name, due_date)
+                        if key not in seen:
+                            seen.add(key)
+                            due_items.append((name, due_date))
+                        break
+            continue
+
+        # 傳統格式匹配
+        matches = list(date_pattern.finditer(line))
         for match in matches:
             raw_date = match.group(1)
             due_date = parse_date(raw_date)
@@ -115,9 +128,11 @@ for pdf in pdf_files:
 
 df = pd.DataFrame(all_results)
 
-# 適用 IACS/CR/ABS 的主檢查關鍵字清單
+# 主分類名稱（已符合你圖片細項+常見CCS/CR格式）
 main_keywords = [
-    "Survey", "Drydock", "Annual", "Special", "Periodical", "Continuous", "Intermediate", "Propeller", "Boiler"
+    "Class Annual Survey", "Class Intermediate Survey", "Class Special Survey",
+    "Continuous Survey", "BTS", "Screwshaft Survey", "Boiler Survey", "Tailshaft Survey", "Propeller Shaft",
+    "Annual", "Special", "Periodical", "Intermediate", "Continuous", "Boiler", "Tailshaft"
 ]
 main_df = df[df["項目名稱"].str.contains("|".join(main_keywords), case=False, na=False)]
 
