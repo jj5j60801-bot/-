@@ -1,20 +1,20 @@
 import datetime
 import re
 import os
-from PyPDF2 import PdfReader
 import pandas as pd
+from PyPDF2 import PdfReader
 import streamlit as st
 
-# 密碼保護，可自行更改
-PASSWORD = "ENGX"
+# 密碼保護設定
+PASSWORD = "yourpassword123"
 input_pwd = st.text_input("請輸入密碼：", type="password")
 if input_pwd != PASSWORD:
     st.warning("請輸入正確密碼")
     st.stop()
 
 IGNORED_KEYWORDS = [
-    "Force MajeureStatus","Status","Not Due","Unknown","Due Range",
-    "Survey Manager","Report","ABS","DNV","Airpipe Closing Device","Device Examination"
+    "Force MajeureStatus", "Status", "Not Due", "Unknown", "Due Range",
+    "Survey Manager", "Report", "ABS", "DNV", "Airpipe Closing Device", "Device Examination"
 ]
 
 def clean_name(name):
@@ -40,6 +40,16 @@ def is_meaningful_name(name):
         return False
     return True
 
+def parse_date(raw_date):
+    """ 智慧自動判斷三種格式 """
+    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%d%b%Y", "%d-%b-%Y"):
+        try:
+            return datetime.datetime.strptime(raw_date, fmt).date()
+        except Exception:
+            continue
+    # 若無法直接格式化，可考慮清理逗號或空格重試
+    return None
+
 def extract_due_dates(pdf_path):
     reader = PdfReader(pdf_path)
     text = ""
@@ -51,31 +61,44 @@ def extract_due_dates(pdf_path):
     lines = text.splitlines()
     due_items = []
     seen = set()
-    date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4})")
+
+    # 支援 yyyy-mm-dd, dd-MMM-yyyy, dd/MM/yyyy, ddMMMYYYY (CR格式)
+    date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|\d{2}[A-Z]{3}\d{4})")
 
     for i, line in enumerate(lines):
-        match = date_pattern.search(line)
-        if not match:
+        matches = list(date_pattern.finditer(line))
+        if not matches:
             continue
-        raw_date = match.group(1)
-        try:
-            try:
-                due_date = datetime.datetime.strptime(raw_date, "%Y-%m-%d").date()
-            except ValueError:
-                due_date = datetime.datetime.strptime(raw_date, "%d-%b-%Y").date()
 
-            name = lines[i - 1].strip() if i > 0 else "未知項目"
+        # 特例處理 CR檢查項（行內多日期時）
+        if len(matches) >= 2 and len(line.strip()) > 10:
+            # 嘗試切割欄位（一般格式 e.g. [item] [date1] [date2] ...）
+            columns = re.split(r"\s{2,}", line.strip())
+            # 適用 CR: [項目名稱, Last Survey, Due, ..]
+            # 抓最後一個日期做為到期日，第一欄必須是文字
+            if len(columns) >= 3 and re.match(r"[A-Za-z]", columns[0]):
+                # 嘗試判斷名字及最後一個日期
+                name = columns[0]
+                raw_date = columns[-1]
+                due_date = parse_date(raw_date)
+                if due_date and is_meaningful_name(name):
+                    key = (name, due_date)
+                    if key not in seen:
+                        seen.add(key)
+                        due_items.append((name, due_date))
+                continue  # 跳至下一行
+
+        # 標準處理：單一日期時
+        for match in matches:
+            raw_date = match.group(1)
+            due_date = parse_date(raw_date)
+            name = lines[i-1].strip() if i > 0 else "未知項目"
             name = clean_name(name)
-            if not is_meaningful_name(name):
-                continue
-
-            key = (name, due_date)
-            if key not in seen:
-                seen.add(key)
-                due_items.append((name, due_date))
-        except Exception:
-            continue
-
+            if due_date and is_meaningful_name(name):
+                key = (name, due_date)
+                if key not in seen:
+                    seen.add(key)
+                    due_items.append((name, due_date))
     return due_items
 
 st.title("全船隊PDF檢驗到期查詢")
@@ -112,8 +135,6 @@ st.markdown("#### 檢驗到期船舶：")
 if vessel_names:
     for name in vessel_names:
         st.markdown(f"- {name}")
-
-    # 下拉選單：只顯示船名（無 .pdf）
     selected_vessel = st.selectbox("請選擇船舶檔案（只顯示到期船名）", vessel_names)
     real_vessel_file = selected_vessel + ".pdf"
     vessel_df = df[df["檔案"] == real_vessel_file]
@@ -121,4 +142,3 @@ if vessel_names:
         st.subheader(f"{selected_vessel} 檢驗到期明細")
         st.dataframe(vessel_df)
 else:
-    st.info("目前無任何船舶到期檢驗。")
