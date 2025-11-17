@@ -5,7 +5,7 @@ import pandas as pd
 from PyPDF2 import PdfReader
 import streamlit as st
 
-PASSWORD = "ENGX"
+PASSWORD = "yourpassword123"
 input_pwd = st.text_input("請輸入密碼：", type="password")
 if input_pwd != PASSWORD:
     st.warning("請輸入正確密碼")
@@ -36,42 +36,75 @@ def remove_dates_from_name(name):
     pat = r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|Due Date\s*:\s*\d{2}-[A-Za-z]{3}-\d{4}|Not Due|Due|[-/]|:)"
     return re.sub(pat, '', name).strip()
 
-def extract_due_dates(pdf_path):
-    reader = PdfReader(pdf_path)
+def get_lines_from_pdf(pdf_path):
     lines = []
+    reader = PdfReader(pdf_path)
     for page in reader.pages:
         txt = page.extract_text()
         if txt:
             lines += txt.splitlines()
-    due_items = []
-    seen = set()
-    prev_name = ""
-    for i, line in enumerate(lines):
-        has_major = any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS)
-        dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
-        # CR/CCS/WH101格式：同一行同時有主檢查與多個日期
-        if has_major and len(dates) >= 1:
+    return lines
+
+def extract_due_dates_cr_ccs(lines):
+    due_items, seen = [], set()
+    for line in lines:
+        if any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS):
+            dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
             namepure = remove_dates_from_name(line)
-            due_date = parse_date(dates[-1])
-            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                key = (namepure, due_date)
-                if key not in seen:
-                    seen.add(key)
-                    due_items.append((namepure, due_date))
+            if len(dates) >= 1:
+                due_date = parse_date(dates[-1])
+                if due_date and is_major_check_item(namepure) and len(namepure) > 2:
+                    key = (namepure, due_date)
+                    if key not in seen:
+                        seen.add(key)
+                        due_items.append((namepure, due_date))
+    return due_items
+
+def extract_due_dates_abs(lines):
+    due_items, seen = [], set()
+    prev_name = ""
+    for line in lines:
+        has_major = any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS)
+        if has_major:
             prev_name = line.strip()
             continue
-        # ABS/DNV一行主名稱一行日期格式
-        if not has_major and len(dates) == 1:
-            due_date = parse_date(dates[0])
+        for match in re.finditer(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line):
+            due_date = parse_date(match.group(1))
             namepure = remove_dates_from_name(prev_name)
             if due_date and is_major_check_item(namepure) and len(namepure) > 2:
                 key = (namepure, due_date)
                 if key not in seen:
                     seen.add(key)
                     due_items.append((namepure, due_date))
-        if has_major:
-            prev_name = line.strip()
     return due_items
+
+def extract_due_dates_default(lines):
+    # fallback-最簡單單行模式（如未列入品牌自動套此）
+    due_items, seen = [], set()
+    prev_name = ""
+    for line in lines:
+        for kw in MAJOR_KEYWORDS:
+            if kw.lower() in line.lower():
+                prev_name = line.strip()
+        for match in re.finditer(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line):
+            due_date = parse_date(match.group(1))
+            namepure = remove_dates_from_name(prev_name)
+            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
+                key = (namepure, due_date)
+                if key not in seen:
+                    seen.add(key)
+                    due_items.append((namepure, due_date))
+    return due_items
+
+def extract_due_dates(pdf_path):
+    fname = os.path.basename(pdf_path).lower()
+    lines = get_lines_from_pdf(pdf_path)
+    if fname.startswith("wh") or "ccs" in fname or "cr" in fname:
+        return extract_due_dates_cr_ccs(lines)
+    elif "abs" in fname:
+        return extract_due_dates_abs(lines)
+    else:
+        return extract_due_dates_default(lines)
 
 st.title("全船隊PDF檢驗到期查詢")
 
