@@ -7,7 +7,7 @@ import streamlit as st
 
 # 密碼保護，可自行更改
 PASSWORD = "yourpassword123"
-input_pwd = st.text_input("ENGX：", type="password")
+input_pwd = st.text_input("ENGX", type="password")
 if input_pwd != PASSWORD:
     st.warning("請輸入密碼")
     st.stop()
@@ -122,4 +122,5 @@ if vessel_names:
         st.dataframe(vessel_df)
 else:
     st.info("目前無任何船舶到期檢驗。")
+
 
