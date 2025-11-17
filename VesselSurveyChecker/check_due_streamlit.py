@@ -60,34 +60,40 @@ def extract_due_dates(pdf_path):
     seen = set()
     date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|\d{4}/\d{2}/\d{2}|\d{2}[A-Z]{3}\d{4}|\d{4}\.\d{2}\.\d{2})")
 
-    in_cr_table = False
-    cr_table_headers = ["Survey Description", "Next Survey Date", "到期日"]
+    in_table = False
+    survey_col, due_col = None, None
     for i, line in enumerate(lines):
-        if any(header in line for header in cr_table_headers):
-            in_cr_table = True
+        tline = line.replace("　", " ").strip()
+        # 多語表頭偵測
+        if any(x in tline for x in [
+            "Survey Description", "檢驗名稱", "檢驗 名稱", "上次檢驗日期", "Next Survey Date", "到期日"
+        ]):
+            in_table = True
+            headers = re.split(r"\s{2,}", tline)
+            # 找 survey欄與到期欄index
+            for idx, h in enumerate(headers):
+                if any(k in h for k in ["Survey Description", "檢驗名稱", "檢驗 名稱"]):
+                    survey_col = idx
+                if any(k in h for k in ["Next Survey Date", "到期日"]):
+                    due_col = idx
             continue
-
-        # CR/CCS表格主體專屬解法，直至遇到空列或其他大標
-        if in_cr_table:
-            if not line.strip() or re.match(r"^[A-Za-z].*:$", line):
-                in_cr_table = False
+        if in_table:
+            if not tline or re.match(r"^[A-Za-z].*:$", tline):
+                in_table = False
                 continue
-            cols = re.split(r"\s{2,}", line.strip())
-            if len(cols) >= 3:
-                name = cols[0].strip()
-                # 盡量抓最右的日期欄(Next Survey/到期日)
-                for idx in range(2, len(cols)):
-                    due_val = cols[idx].strip()
-                    due_date = parse_date(due_val)
-                    if due_date and is_meaningful_name(name):
-                        key = (name, due_date)
-                        if key not in seen:
-                            seen.add(key)
-                            due_items.append((name, due_date))
-                        break
-            continue
-
-        # 傳統格式匹配
+            cols = re.split(r"\s{2,}", tline)
+            # 容錯必須夠欄且index都找到
+            if survey_col is not None and due_col is not None and len(cols) > max(survey_col, due_col):
+                name = cols[survey_col].strip()
+                due_str = cols[due_col].strip()
+                due_date = parse_date(due_str)
+                if due_date and is_meaningful_name(name):
+                    key = (name, due_date)
+                    if key not in seen:
+                        seen.add(key)
+                        due_items.append((name, due_date))
+                continue
+        # 補一般格式
         matches = list(date_pattern.finditer(line))
         for match in matches:
             raw_date = match.group(1)
@@ -128,11 +134,8 @@ for pdf in pdf_files:
 
 df = pd.DataFrame(all_results)
 
-# 主分類名稱（已符合你圖片細項+常見CCS/CR格式）
 main_keywords = [
-    "Class Annual Survey", "Class Intermediate Survey", "Class Special Survey",
-    "Continuous Survey", "BTS", "Screwshaft Survey", "Boiler Survey", "Tailshaft Survey", "Propeller Shaft",
-    "Annual", "Special", "Periodical", "Intermediate", "Continuous", "Boiler", "Tailshaft"
+    "Survey", "Annual", "Special", "Periodical", "Intermediate", "Continuous", "Boiler", "Tailshaft", "Propeller", "BTS", "Screwshaft"
 ]
 main_df = df[df["項目名稱"].str.contains("|".join(main_keywords), case=False, na=False)]
 
