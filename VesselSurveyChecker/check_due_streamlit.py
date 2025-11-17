@@ -1,52 +1,3 @@
-import datetime
-import re
-import os
-import pandas as pd
-from PyPDF2 import PdfReader
-import streamlit as st
-
-PASSWORD = "yourpassword123"
-input_pwd = st.text_input("請輸入密碼：", type="password")
-if input_pwd != PASSWORD:
-    st.warning("請輸入正確密碼")
-    st.stop()
-
-IGNORED_KEYWORDS = [
-    "Force MajeureStatus", "Status", "Not Due", "Unknown", "Due Range",
-    "Survey Manager", "Report", "ABS", "DNV", "Airpipe Closing Device", "Device Examination"
-]
-
-def clean_name(name):
-    name = re.sub(r"\d{1,2}-[A-Za-z]{3}-\d{4}", "", name)
-    name = re.sub(r"\d{4}-\d{2}-\d{2}", "", name)
-    name = re.sub(r"[-]{1,}|\s{2,}", " ", name)
-    name = re.sub(r"\b[Dd]ue\b$", "", name)
-    name = re.sub(r"\bNot Due\b$", "", name)
-    name = re.sub(r"\s*\d{1,2}\s*$", "", name)
-    return name.strip()
-
-def is_meaningful_name(name):
-    if not name.strip():
-        return False
-    if "Not" in name:
-        return False
-    for kw in IGNORED_KEYWORDS:
-        if kw.lower() in name.lower():
-            return False
-    if re.match(r"^[0-9\- ]+$", name.strip()):
-        return False
-    if len(name.split()) > 0 and name.split()[0].isdigit():
-        return False
-    return True
-
-def parse_date(raw_date):
-    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%Y/%m/%d", "%d%b%Y", "%Y.%m.%d"):
-        try:
-            return datetime.datetime.strptime(raw_date, fmt).date()
-        except Exception:
-            continue
-    return None
-
 def extract_due_dates(pdf_path):
     reader = PdfReader(pdf_path)
     text = ""
@@ -58,43 +9,55 @@ def extract_due_dates(pdf_path):
     lines = text.splitlines()
     due_items = []
     seen = set()
+    in_table = False
     survey_col, due_col = None, None
-    capture_section = False
-
+    table_start_keywords = ["Survey Description", "檢驗名稱"]
+    due_col_keywords = ["Next Survey Date", "到期日"]
     for i, line in enumerate(lines):
-        line = line.replace("　", " ").strip()
-        # 動態標題條件（支援中英文）
-        if (("Survey Description" in line and "Next Survey Date" in line) 
-            or ("檢驗名稱" in line and "到期日" in line)):
-            headers = re.split(r"\s{2,}|\t", line)
-            survey_col = due_col = None
+        linetxt = line.replace("　", " ").strip()
+        # 判斷CCS/CR主表格
+        if any(k in linetxt for k in table_start_keywords) and any(k in linetxt for k in due_col_keywords):
+            headers = re.split(r"\s{2,}|\t+", linetxt)
+            survey_col, due_col = None, None
             for idx, h in enumerate(headers):
-                if "Survey Description" in h or "檢驗名稱" in h:
+                if any(x in h for x in table_start_keywords):
                     survey_col = idx
-                if "Next Survey Date" in h or "到期日" in h:
+                if any(x in h for x in due_col_keywords):
                     due_col = idx
-            if survey_col is not None and due_col is not None:
-                capture_section = True
-                continue
-        if capture_section:
-            # 終止條件（遇到完全空白行、或大段不是檢查行、或遇到下個表頭）
-            if not line or re.match(r"^[A-Za-z ]+Surveys?$", line) or re.match(r"^[A-Za-z ]+:", line):
-                capture_section = False
-                continue
-            # 處理表格內容行（動態欄位支持）
-            cols = re.split(r"\s{2,}|\t+", line)
+            in_table = True
+            continue
+        if in_table and (not linetxt or re.match(r"^[A-Za-z ]+Surveys?$", linetxt) or re.match(r"^[A-Za-z ]+:", linetxt)):
+            in_table = False
+            continue
+        # CCS主表格分段抓
+        if in_table and survey_col is not None and due_col is not None:
+            cols = re.split(r"\s{2,}|\t+", linetxt)
+            # Fallback: 若欄不足，補嘗試用1次正則全抓
             if len(cols) > max(survey_col, due_col):
-                name = cols[survey_col].strip()
-                due_str = cols[due_col].strip()
+                name, due_str = cols[survey_col].strip(), cols[due_col].strip()
                 due_date = parse_date(due_str)
                 if due_date and is_meaningful_name(name):
                     key = (name, due_date)
                     if key not in seen:
                         seen.add(key)
                         due_items.append((name, due_date))
+            else:
+                # 萬一欄位不足，直接正則找該行所有日期，全行唯一項目配最右日期
+                date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|\d{4}/\d{2}/\d{2}|\d{4}\.\d{2}\.\d{2})")
+                dates = list(date_pattern.finditer(linetxt))
+                if len(dates) >= 1:
+                    due_str = dates[-1][0]
+                    text_parts = linetxt.split(due_str)
+                    name = text_parts[0].strip() if text_parts else linetxt
+                    due_date = parse_date(due_str)
+                    if due_date and is_meaningful_name(name):
+                        key = (name, due_date)
+                        if key not in seen:
+                            seen.add(key)
+                            due_items.append((name, due_date))
             continue
-        # 萬一進階格式失敗可補前置常規抓取
-        date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|\d{4}/\d{2}/\d{2}|\d{2}[A-Z]{3}\d{4}|\d{4}\.\d{2}\.\d{2})")
+        # 除了CCS表外也還是保留單行regex fallback
+        date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|\d{4}/\d{2}/\d{2}|\d{4}\.\d{2}\.\d{2})")
         matches = list(date_pattern.finditer(line))
         for match in matches:
             raw_date = match.group(1)
@@ -107,50 +70,3 @@ def extract_due_dates(pdf_path):
                     seen.add(key)
                     due_items.append((name, due_date))
     return due_items
-
-st.title("全船隊PDF檢驗到期查詢")
-
-pdf_folder = os.path.join(os.path.dirname(__file__), "pdfs")
-today = datetime.date.today()
-days_limit = st.number_input('列出幾天內到期（例：90）', min_value=1, value=90)
-
-all_results = []
-pdf_files = [
-    os.path.join(pdf_folder, f)
-    for f in os.listdir(pdf_folder)
-    if f.lower().endswith(".pdf")
-]
-
-for pdf in pdf_files:
-    due_list = extract_due_dates(pdf)
-    for name, due_date in due_list:
-        days_left = (due_date - today).days
-        if 0 <= days_left <= days_limit:
-            all_results.append({
-                "檔案": os.path.basename(pdf),
-                "項目名稱": name,
-                "到期日": due_date.strftime("%Y-%m-%d"),
-                "剩餘天數": days_left
-            })
-
-df = pd.DataFrame(all_results)
-
-main_keywords = [
-    "Survey", "Annual", "Special", "Periodical", "Intermediate", "Continuous", "Boiler", "Tailshaft", "Propeller", "BTS", "Screwshaft"
-]
-main_df = df[df["項目名稱"].str.contains("|".join(main_keywords), case=False, na=False)]
-
-vessel_names = sorted(set(name.replace('.pdf', '') for name in main_df["檔案"].unique()))
-
-st.markdown("#### 檢驗到期船舶：")
-if vessel_names:
-    for name in vessel_names:
-        st.markdown(f"- {name}")
-    selected_vessel = st.selectbox("請選擇船舶檔案（只顯示到期船名）", vessel_names)
-    real_vessel_file = selected_vessel + ".pdf"
-    vessel_df = main_df[main_df["檔案"] == real_vessel_file]
-    if not vessel_df.empty:
-        st.subheader(f"{selected_vessel} 檢驗到期明細 (主分類)")
-        st.dataframe(vessel_df)
-else:
-    st.info("目前無任何船舶到期檢驗。")
