@@ -11,14 +11,11 @@ if input_pwd != PASSWORD:
     st.warning("請輸入正確密碼")
     st.stop()
 
-def clean_name(name):
-    name = re.sub(r"\d{1,2}-[A-Za-z]{3}-\d{4}", "", name)
-    name = re.sub(r"\d{4}-\d{2}-\d{2}", "", name)
-    name = re.sub(r"[-]{1,}|\s{2,}", " ", name)
-    name = re.sub(r"\b[Dd]ue\b$", "", name)
-    name = re.sub(r"\bNot Due\b$", "", name)
-    name = re.sub(r"\s*\d{1,2}\s*$", "", name)
-    return name.strip()
+MAJOR_KEYWORDS = [
+    "Class Annual Survey", "Class Intermediate Survey", "Class Special Survey",
+    "Continuous Survey", "Boiler Survey", "Tailshaft Survey",
+    "Screwshaft Survey", "Propeller Shaft"
+]
 
 def parse_date(raw_date):
     for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%Y/%m/%d", "%d%b%Y", "%Y.%m.%d"):
@@ -28,23 +25,8 @@ def parse_date(raw_date):
             continue
     return None
 
-def is_meaningful_name(name):
-    IGNORED_KEYWORDS = [
-        "Force MajeureStatus", "Status", "Not Due", "Unknown", "Due Range",
-        "Survey Manager", "Report", "ABS", "DNV", "Airpipe Closing Device", "Device Examination"
-    ]
-    if not name.strip():
-        return False
-    if "Not" in name:
-        return False
-    for kw in IGNORED_KEYWORDS:
-        if kw.lower() in name.lower():
-            return False
-    if re.match(r"^[0-9\- ]+$", name.strip()):
-        return False
-    if len(name.split()) > 0 and name.split()[0].isdigit():
-        return False
-    return True
+def is_major_check_item(name):
+    return any(name.strip().startswith(kw) for kw in MAJOR_KEYWORDS)
 
 def extract_due_dates(pdf_path):
     reader = PdfReader(pdf_path)
@@ -53,22 +35,19 @@ def extract_due_dates(pdf_path):
         txt = page.extract_text()
         if txt:
             text += txt + "\n"
-
     lines = text.splitlines()
     due_items = []
     seen = set()
     prev_name = ""
     for line in lines:
-        # 有名字關鍵字時（Survey/Boiler/Propelle...等開頭）才記住
-        if any(kw in line for kw in [
-            "Survey", "Boiler", "Propeller", "Tailshaft", "Screw", "Hull", "Machinery", "Aux"
-        ]) and not re.search(r"\d{4}-\d{2}-\d{2}", line):
-            prev_name = line.strip()
-        # 行內找所有日期，匹配到的都配prev_name
+        for kw in MAJOR_KEYWORDS:
+            if line.strip().startswith(kw):
+                prev_name = line.strip()
+                break  # 只要命中主名稱開頭即設定
         for match in re.finditer(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line):
             due_date = parse_date(match.group(1))
-            name = clean_name(prev_name)
-            if due_date and is_meaningful_name(name):
+            name = prev_name
+            if due_date and is_major_check_item(name):
                 key = (name, due_date)
                 if key not in seen:
                     seen.add(key)
@@ -103,25 +82,16 @@ for pdf in pdf_files:
 df = pd.DataFrame(all_results)
 
 if df.empty:
-    st.info("未解析出任何到期檢查項目。請檢查PDF格式或聯繫管理員。")
-    st.text("DEBUG PDF內容(部分)：")
-    for pdf in pdf_files:
-        reader = PdfReader(pdf)
-        for line in reader.pages[0].extract_text().splitlines()[:30]:
-            st.text(line)
+    st.info("未解析出任何到期檢查項目。")
 else:
-    main_keywords = [
-        "Survey", "Annual", "Special", "Periodical", "Intermediate", "Continuous", "Boiler", "Tailshaft", "Propeller", "Screw"
-    ]
-    main_df = df[df["項目名稱"].str.contains("|".join(main_keywords), case=False, na=False)]
-    vessel_names = sorted(set(name.replace('.pdf', '') for name in main_df["檔案"].unique()))
+    vessel_names = sorted(set(name.replace('.pdf', '') for name in df["檔案"].unique()))
     st.markdown("#### 檢驗到期船舶：")
     if vessel_names:
         for name in vessel_names:
             st.markdown(f"- {name}")
         selected_vessel = st.selectbox("請選擇船舶檔案（只顯示到期船名）", vessel_names)
         real_vessel_file = selected_vessel + ".pdf"
-        vessel_df = main_df[main_df["檔案"] == real_vessel_file]
+        vessel_df = df[df["檔案"] == real_vessel_file]
         if not vessel_df.empty:
             st.subheader(f"{selected_vessel} 檢驗到期明細 (主分類)")
             st.dataframe(vessel_df)
