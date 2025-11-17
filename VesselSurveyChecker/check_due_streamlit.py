@@ -55,42 +55,24 @@ def extract_due_dates(pdf_path):
             text += txt + "\n"
 
     lines = text.splitlines()
-    # 可DEBUG PDF每一行
-    # with open("debug_lines.txt", "w", encoding="utf-8") as f:
-    #     for l in lines:
-    #         f.write(repr(l)+"\n")
     due_items = []
     seen = set()
-    prev_line = ""
-    for i, line in enumerate(lines):
-        date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|\d{4}/\d{2}/\d{2}|\d{4}\.\d{2}\.\d{2})")
-        matches = list(date_pattern.finditer(line))
-        # 若行有多個欄欄，抓出所有日期
-        if matches:
-            # 若有多欄，判斷欄數 >2時分割最右日期
-            cols = re.split(r"\s{2,}|\t+", line.strip())
-            if len(cols) >= 2:
-                name = cols[0].strip()
-                for date_text in cols[1:]:
-                    date_found = date_pattern.search(date_text)
-                    if date_found:
-                        due_date = parse_date(date_found.group(1))
-                        if due_date and is_meaningful_name(name):
-                            key = (name, due_date)
-                            if key not in seen:
-                                seen.add(key)
-                                due_items.append((name, due_date))
-            else:
-                # 只剩一個欄時，主動用前一行
-                raw_date = matches[-1].group(1)
-                due_date = parse_date(raw_date)
-                name = prev_line.strip()
-                if due_date and is_meaningful_name(name):
-                    key = (name, due_date)
-                    if key not in seen:
-                        seen.add(key)
-                        due_items.append((name, due_date))
-        prev_line = line
+    prev_name = ""
+    for line in lines:
+        # 有名字關鍵字時（Survey/Boiler/Propelle...等開頭）才記住
+        if any(kw in line for kw in [
+            "Survey", "Boiler", "Propeller", "Tailshaft", "Screw", "Hull", "Machinery", "Aux"
+        ]) and not re.search(r"\d{4}-\d{2}-\d{2}", line):
+            prev_name = line.strip()
+        # 行內找所有日期，匹配到的都配prev_name
+        for match in re.finditer(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line):
+            due_date = parse_date(match.group(1))
+            name = clean_name(prev_name)
+            if due_date and is_meaningful_name(name):
+                key = (name, due_date)
+                if key not in seen:
+                    seen.add(key)
+                    due_items.append((name, due_date))
     return due_items
 
 st.title("全船隊PDF檢驗到期查詢")
@@ -121,18 +103,15 @@ for pdf in pdf_files:
 df = pd.DataFrame(all_results)
 
 if df.empty:
-    st.info("未解析出任何到期檢查項目，請檢查PDF格式或洽管理員。")
-    st.text("DEBUG preview lines↓")
+    st.info("未解析出任何到期檢查項目。請檢查PDF格式或聯繫管理員。")
+    st.text("DEBUG PDF內容(部分)：")
     for pdf in pdf_files:
         reader = PdfReader(pdf)
-        lines = []
-        for page in reader.pages:
-            lines += page.extract_text().splitlines()
-        for l in lines[:30]:
-            st.text(l)
+        for line in reader.pages[0].extract_text().splitlines()[:30]:
+            st.text(line)
 else:
     main_keywords = [
-        "Survey", "Annual", "Special", "Periodical", "Intermediate", "Continuous", "Boiler", "Tailshaft", "Propeller", "BTS", "Screwshaft"
+        "Survey", "Annual", "Special", "Periodical", "Intermediate", "Continuous", "Boiler", "Tailshaft", "Propeller", "Screw"
     ]
     main_df = df[df["項目名稱"].str.contains("|".join(main_keywords), case=False, na=False)]
     vessel_names = sorted(set(name.replace('.pdf', '') for name in main_df["檔案"].unique()))
