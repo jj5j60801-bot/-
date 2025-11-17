@@ -6,8 +6,8 @@ import pandas as pd
 import streamlit as st
 
 # 密碼保護，可自行更改
-PASSWORD = "yourpassword123"
-input_pwd = st.text_input("請輸入密碼：", type="ENGX")
+PASSWORD = "ENGX"
+input_pwd = st.text_input("請輸入密碼：", type="password")
 if input_pwd != PASSWORD:
     st.warning("請輸入正確密碼")
     st.stop()
