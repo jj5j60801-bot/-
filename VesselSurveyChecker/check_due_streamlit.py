@@ -32,6 +32,11 @@ def parse_date(raw_date):
 def is_major_check_item(name):
     return any(kw.lower() in name.lower() for kw in MAJOR_KEYWORDS)
 
+def remove_dates_from_name(name):
+    # 移除內含日期、Due、Not Due、結尾雜項
+    pat = r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|Due Date\s*:\s*\d{2}-[A-Za-z]{3}-\d{4}|Not Due|Due|[-/]|:)"
+    return re.sub(pat, '', name).strip()
+
 def extract_due_dates(pdf_path):
     reader = PdfReader(pdf_path)
     text = ""
@@ -44,16 +49,14 @@ def extract_due_dates(pdf_path):
     seen = set()
     prev_name = ""
     for line in lines:
-        # 先抓主檢查名稱行
         for kw in MAJOR_KEYWORDS:
             if kw.lower() in line.lower():
                 prev_name = line.strip()
                 break
-        # 每行所有日期配最近主檢查名稱
         for match in re.finditer(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line):
             due_date = parse_date(match.group(1))
-            name = prev_name
-            if due_date and is_major_check_item(name):
+            name = remove_dates_from_name(prev_name)
+            if due_date and is_major_check_item(name) and len(name) > 2:
                 key = (name, due_date)
                 if key not in seen:
                     seen.add(key)
@@ -84,6 +87,7 @@ for pdf in pdf_files:
                 "到期日": due_date.strftime("%Y-%m-%d"),
                 "剩餘天數": days_left
             })
+
 df = pd.DataFrame(all_results)
 
 if df.empty:
