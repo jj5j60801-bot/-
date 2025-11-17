@@ -5,7 +5,7 @@ import pandas as pd
 from PyPDF2 import PdfReader
 import streamlit as st
 
-PASSWORD = "123"
+PASSWORD = "yourpassword123"
 input_pwd = st.text_input("請輸入密碼：", type="password")
 if input_pwd != PASSWORD:
     st.warning("請輸入正確密碼")
@@ -40,7 +40,7 @@ def is_meaningful_name(name):
     return True
 
 def parse_date(raw_date):
-    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%d%b%Y", "%d-%b-%Y"):
+    for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%d%b%Y", "%d-%b-%Y", "%d-%b-%y"):
         try:
             return datetime.datetime.strptime(raw_date, fmt).date()
         except Exception:
@@ -115,8 +115,10 @@ for pdf in pdf_files:
 
 df = pd.DataFrame(all_results)
 
-# 只取主要分類（如含Class Survey的檢查）
-main_keywords = ["Class Survey"]   # 可自行調整、增加
+# 適用 IACS/CR/ABS 的主檢查關鍵字清單
+main_keywords = [
+    "Survey", "Drydock", "Annual", "Special", "Periodical", "Continuous", "Intermediate", "Propeller", "Boiler"
+]
 main_df = df[df["項目名稱"].str.contains("|".join(main_keywords), case=False, na=False)]
 
 vessel_names = sorted(set(name.replace('.pdf', '') for name in main_df["檔案"].unique()))
