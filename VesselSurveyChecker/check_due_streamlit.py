@@ -40,6 +40,7 @@ def is_meaningful_name(name):
     return True
 
 def parse_date(raw_date):
+    # 通用常見格式
     for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d/%m/%Y", "%Y/%m/%d", "%d%b%Y", "%Y.%m.%d"):
         try:
             return datetime.datetime.strptime(raw_date, fmt).date()
@@ -58,32 +59,31 @@ def extract_due_dates(pdf_path):
     lines = text.splitlines()
     due_items = []
     seen = set()
-    date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|\d{4}/\d{2}/\d{2}|\d{2}[A-Z]{3}\d{4}|\d{4}\.\d{2}\.\d{2})")
-
-    in_table = False
     survey_col, due_col = None, None
+    in_table = False
+    # 用多關鍵字判斷
     for i, line in enumerate(lines):
-        tline = line.replace("　", " ").strip()
-        # 多語表頭偵測
-        if any(x in tline for x in [
-            "Survey Description", "檢驗名稱", "檢驗 名稱", "上次檢驗日期", "Next Survey Date", "到期日"
-        ]):
-            in_table = True
-            headers = re.split(r"\s{2,}", tline)
-            # 找 survey欄與到期欄index
-            for idx, h in enumerate(headers):
-                if any(k in h for k in ["Survey Description", "檢驗名稱", "檢驗 名稱"]):
-                    survey_col = idx
-                if any(k in h for k in ["Next Survey Date", "到期日"]):
-                    due_col = idx
+        line = line.strip().replace("　", " ")
+        if not line:
             continue
-        if in_table:
-            if not tline or re.match(r"^[A-Za-z].*:$", tline):
-                in_table = False
-                continue
-            cols = re.split(r"\s{2,}", tline)
-            # 容錯必須夠欄且index都找到
-            if survey_col is not None and due_col is not None and len(cols) > max(survey_col, due_col):
+        # 表頭判斷，支持中英雙語
+        if ("Survey Description" in line and "Next Survey Date" in line) or ("檢驗名稱" in line and "到期日" in line):
+            headers = re.split(r"\s{2,}|\t", line)
+            for idx, h in enumerate(headers):
+                if "Survey Description" in h or "檢驗名稱" in h:
+                    survey_col = idx
+                if "Next Survey Date" in h or "到期日" in h:
+                    due_col = idx
+            in_table = True
+            continue
+        # 結束判斷（遇到特殊格式或新表頭就關閉）
+        if in_table and (re.match(r"^[A-Za-z ]+:", line) or ("Survey" in line and "Date" in line and i != 0)):
+            in_table = False
+            continue
+        # 表格主體內容
+        if in_table and survey_col is not None and due_col is not None:
+            cols = re.split(r"\s{2,}|\t", line)
+            if len(cols) > max(survey_col, due_col):
                 name = cols[survey_col].strip()
                 due_str = cols[due_col].strip()
                 due_date = parse_date(due_str)
@@ -92,8 +92,9 @@ def extract_due_dates(pdf_path):
                     if key not in seen:
                         seen.add(key)
                         due_items.append((name, due_date))
-                continue
-        # 補一般格式
+            continue
+        # 備用常規解析
+        date_pattern = re.compile(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|\d{4}/\d{2}/\d{2}|\d{2}[A-Z]{3}\d{4}|\d{4}\.\d{2}\.\d{2})")
         matches = list(date_pattern.finditer(line))
         for match in matches:
             raw_date = match.group(1)
