@@ -33,7 +33,6 @@ def is_major_check_item(name):
     return any(kw.lower() in name.lower() for kw in MAJOR_KEYWORDS)
 
 def remove_dates_from_name(name):
-    # 移除內含日期、Due、Not Due、結尾雜項
     pat = r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|Due Date\s*:\s*\d{2}-[A-Za-z]{3}-\d{4}|Not Due|Due|[-/]|:)"
     return re.sub(pat, '', name).strip()
 
@@ -47,20 +46,28 @@ def extract_due_dates(pdf_path):
     lines = text.splitlines()
     due_items = []
     seen = set()
-    prev_name = ""
     for line in lines:
-        for kw in MAJOR_KEYWORDS:
-            if kw.lower() in line.lower():
-                prev_name = line.strip()
-                break
-        for match in re.finditer(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line):
-            due_date = parse_date(match.group(1))
-            name = remove_dates_from_name(prev_name)
-            if due_date and is_major_check_item(name) and len(name) > 2:
-                key = (name, due_date)
-                if key not in seen:
-                    seen.add(key)
-                    due_items.append((name, due_date))
+        # 針對CR/CCS：整行包含主檢查+多日期，只取最右者
+        if any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS):
+            dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
+            namepure = remove_dates_from_name(line)
+            if len(dates) >= 1:
+                due_date = parse_date(dates[-1])
+                if due_date and is_major_check_item(namepure) and len(namepure) > 2:
+                    key = (namepure, due_date)
+                    if key not in seen:
+                        seen.add(key)
+                        due_items.append((namepure, due_date))
+        else:
+            # 傳統單行 (如ABS/DNV等格式保持)
+            for match in re.finditer(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line):
+                due_date = parse_date(match.group(1))
+                prev_name = remove_dates_from_name(line)
+                if due_date and is_major_check_item(prev_name) and len(prev_name) > 2:
+                    key = (prev_name, due_date)
+                    if key not in seen:
+                        seen.add(key)
+                        due_items.append((prev_name, due_date))
     return due_items
 
 st.title("全船隊PDF檢驗到期查詢")
