@@ -18,7 +18,13 @@ MAJOR_KEYWORDS = [
     "Annual Machinery Survey", "Special Continuous Survey", "Special Periodical Survey",
     "Drydocking Survey", "Boiler Survey", "Auxiliary Boiler", "Screwshaft Survey", "Propeller Shaft",
     "Tailshaft Survey", "Tail Shaft", "Propeller Shaft Condition Monitoring", "Propeller Shaft Survey",
-    "Machinery items", "Hull items", "Cargo Gear Load Test", "BTS"
+    "Machinery items", "Hull items", "Cargo Gear Load Test", "BTS", "LL Annual Survey", "SC Annual Survey", "SE Annual Survey", "IAPP Annual Survey", "Iopp Annual Survey", "BWM Annual Survey"
+]
+
+# 常見CR/CCS地名，可再自行補充
+CR_LOCATIONS = [
+    "Xiamen", "Shenzhen", "Shanghai", "Keelung", "Kaohsiung", "Qingdao", "Tianjin",
+    "Dalian", "Fuzhou", "Zhoushan", "Ningbo", "Hong Kong", "Taichung", "Tainan"
 ]
 
 def parse_date(raw_date):
@@ -36,6 +42,11 @@ def remove_dates_from_name(name):
     pat = r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4}|Due Date\s*:\s*\d{2}-[A-Za-z]{3}-\d{4}|Not Due|Due|[-/]|:)"
     return re.sub(pat, '', name).strip()
 
+def remove_location_from_name(name):
+    # 去除地名（開頭、中間或結尾都可，連帶多餘空格）
+    pat = r"\b(" + "|".join(re.escape(loc) for loc in CR_LOCATIONS) + r")\b"
+    return re.sub(pat, '', name).replace("  ", " ").strip()
+
 def get_lines_from_pdf(pdf_path):
     lines = []
     reader = PdfReader(pdf_path)
@@ -51,13 +62,14 @@ def extract_due_dates_cr_ccs(lines):
         if any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS):
             dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
             namepure = remove_dates_from_name(line)
+            nameclean = remove_location_from_name(namepure)
             if len(dates) >= 1:
                 due_date = parse_date(dates[-1])
-                if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                    key = (namepure, due_date)
+                if due_date and is_major_check_item(nameclean) and len(nameclean) > 2:
+                    key = (nameclean, due_date)
                     if key not in seen:
                         seen.add(key)
-                        due_items.append((namepure, due_date))
+                        due_items.append((nameclean, due_date))
     return due_items
 
 def extract_due_dates_abs(lines):
@@ -65,8 +77,8 @@ def extract_due_dates_abs(lines):
     prev_name = ""
     for i, line in enumerate(lines):
         has_major = any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS)
-        # 抓同行只有一個日期的，才認定純Due Date，排除一行多日期（＝有Range Date）
         dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
+        # 僅抓純Due Date(同行僅一組日期)，同行若帶Range/多個日期自動略過
         if has_major and len(dates) == 1:
             namepure = remove_dates_from_name(line)
             due_date = parse_date(dates[0])
