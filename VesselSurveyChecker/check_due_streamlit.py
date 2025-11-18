@@ -153,13 +153,15 @@ for pdf in pdf_files:
     due_list = extract_due_dates(pdf)
     for name, due_date, range_disp in due_list:
         days_left = (due_date - today).days if due_date else ""
-        all_results.append({
-            "檔案": os.path.basename(pdf),
-            "項目名稱": name,
-            "到期日": due_date.strftime("%Y-%m-%d") if due_date else "",
-            "RANGE DATE": range_disp,
-            "剩餘天數": days_left
-        })
+        # 只顯示Due Date已在設定天數內的資料，RANGE僅為附註
+        if due_date and 0 <= days_left <= days_limit:
+            all_results.append({
+                "檔案": os.path.basename(pdf),
+                "項目名稱": name,
+                "到期日": due_date.strftime("%Y-%m-%d") if due_date else "",
+                "RANGE DATE": range_disp,
+                "剩餘天數": days_left
+            })
 
 df = pd.DataFrame(all_results)
 if df.empty:
@@ -174,6 +176,4 @@ else:
         real_vessel_file = selected_vessel + ".pdf"
         vessel_df = df[df["檔案"] == real_vessel_file]
         show_cols = ["項目名稱", "到期日", "RANGE DATE", "剩餘天數"]
-        vessel_df_show = vessel_df[show_cols] if all(c in vessel_df for c in show_cols) else vessel_df
-        st.subheader(f"{selected_vessel} 檢驗到期明細 (主分類)")
-        st.dataframe(vessel_df_show)
+        vessel_df_show = vessel_df[show_cols]
