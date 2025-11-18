@@ -18,7 +18,9 @@ MAJOR_KEYWORDS = [
     "Annual Machinery Survey", "Special Continuous Survey", "Special Periodical Survey",
     "Drydocking Survey", "Boiler Survey", "Auxiliary Boiler", "Screwshaft Survey", "Propeller Shaft",
     "Tailshaft Survey", "Tail Shaft", "Propeller Shaft Condition Monitoring", "Propeller Shaft Survey",
-    "Machinery items", "Hull items", "Cargo Gear Load Test", "BTS", "LL Annual Survey", "SC Annual Survey", "SE Annual Survey", "IAPP Annual Survey", "Iopp Annual Survey", "BWM Annual Survey"
+    "Machinery items", "Hull items", "Cargo Gear Load Test", "BTS", "LL Annual Survey",
+    "SC Annual Survey", "SE Annual Survey", "IAPP Annual Survey", "Iopp Annual Survey",
+    "BWM Annual Survey",
 ]
 CR_LOCATIONS = [
     "Xiamen", "Shenzhen", "Shanghai", "Keelung", "Kaohsiung", "Qingdao", "Tianjin",
@@ -74,18 +76,13 @@ def extract_due_dates_abs(lines):
     prev_name = ""
     for line in lines:
         has_major = any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS)
-        # ABS格式標準：同行如有2日期（Due + RangeEnd），或有Range區段字串
-        range_match = re.search(r"(\d{2,4}-[A-Za-z]{3}-\d{2,4}|\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4})\s*[~\-–]\s*(\d{2,4}-[A-Za-z]{3}-\d{2,4}|\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4})", line)
+        # ABS格式一律: 第1日期為DueDate, 若同行還有第2日期，組成Range Date區間
         dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
-        if has_major:
+        rangedisp = ""
+        if has_major and len(dates) >= 1:
             namepure = remove_dates_from_name(line)
-            due_date = parse_date(dates[0]) if dates else None
-            rangedisp = ""
-            if range_match:
-                range_start = range_match.group(1)
-                range_end = range_match.group(2)
-                rangedisp = f"{range_start} ~ {range_end}"
-            elif len(dates) == 2:
+            due_date = parse_date(dates[0])
+            if len(dates) >= 2:
                 rangedisp = f"{dates[0]} ~ {dates[1]}"
             if due_date and is_major_check_item(namepure) and len(namepure) > 2:
                 key = (namepure, due_date, rangedisp)
@@ -151,7 +148,7 @@ for pdf in pdf_files:
             all_results.append({
                 "檔案": os.path.basename(pdf),
                 "項目名稱": name,
-                "到期日": due_date.strftime("%Y-%m-%d") if due_date else "",
+                "到期日": due_date.strftime("%Y-%m-%d"),
                 "RANGE DATE": range_disp,
                 "剩餘天數": days_left
             })
