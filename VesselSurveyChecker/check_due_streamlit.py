@@ -18,9 +18,8 @@ MAJOR_KEYWORDS = [
     "Annual Machinery Survey", "Special Continuous Survey", "Special Periodical Survey",
     "Drydocking Survey", "Boiler Survey", "Auxiliary Boiler", "Screwshaft Survey", "Propeller Shaft",
     "Tailshaft Survey", "Tail Shaft", "Propeller Shaft Condition Monitoring", "Propeller Shaft Survey",
-    "Machinery items", "Hull items", "Cargo Gear Load Test", "BTS", "LL Annual Survey",
-    "SC Annual Survey", "SE Annual Survey", "IAPP Annual Survey", "Iopp Annual Survey",
-    "BWM Annual Survey"
+    "Machinery items", "Hull items", "Cargo Gear Load Test", "BTS", "LL Annual Survey", "SC Annual Survey",
+    "SE Annual Survey", "IAPP Annual Survey", "Iopp Annual Survey", "BWM Annual Survey"
 ]
 CR_LOCATIONS = [
     "Xiamen", "Shenzhen", "Shanghai", "Keelung", "Kaohsiung", "Qingdao", "Tianjin",
@@ -73,30 +72,29 @@ def extract_due_dates_cr_ccs(lines):
 
 def extract_due_dates_abs(lines):
     due_items, seen = [], set()
-    prev_name = ""
+    header_found = False
     for line in lines:
-        has_major = any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS)
-        dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
-        rangedisp = ""
-        if has_major:
-            namepure = remove_dates_from_name(line)
-            due_date = parse_date(dates[0]) if len(dates) >= 1 else None
-            if len(dates) >= 2:
-                rangedisp = f"{dates[0]} ~ {dates[1]}"
-            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                key = (namepure, due_date, rangedisp)
-                if key not in seen:
-                    seen.add(key)
-                    due_items.append((namepure, due_date, rangedisp))
-            prev_name = line.strip()
-        elif prev_name and len(dates) == 1:
-            namepure = remove_dates_from_name(prev_name)
-            due_date = parse_date(dates[0])
-            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                key = (namepure, due_date, "")
-                if key not in seen:
-                    seen.add(key)
-                    due_items.append((namepure, due_date, ""))
+        # 找ABS表格表頭
+        if not header_found and "Survey Name" in line and "Due Date" in line and "Range Date" in line:
+            header_found = True
+            continue
+        if header_found:
+            # 跳過空行或表頭重複
+            if not line.strip() or "Survey Name" in line:
+                continue
+            # 以多空格或Tab分割，分欄取得主名稱、Due、Range
+            parts = re.split(r'\s{2,}|\t', line.strip())
+            if len(parts) >= 3 and any(kw.lower() in parts[0].lower() for kw in MAJOR_KEYWORDS):
+                name = parts[0].strip()
+                due_date_text = parts[1].strip()
+                range_text = parts[2].strip()
+                due_date = parse_date(due_date_text)
+                range_disp = range_text if range_text != "-" else ""
+                if due_date and is_major_check_item(name) and len(name) > 2:
+                    key = (name, due_date, range_disp)
+                    if key not in seen:
+                        seen.add(key)
+                        due_items.append((name, due_date, range_disp))
     return due_items
 
 def extract_due_dates_default(lines):
