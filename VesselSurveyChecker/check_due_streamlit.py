@@ -82,14 +82,14 @@ def extract_due_dates_abs(lines):
             # 跳過空行或表頭重複
             if not line.strip() or "Survey Name" in line:
                 continue
-            # 以多空格或Tab分割，分欄取得主名稱、Due、Range
+            # 用多空格或Tab分割欄
             parts = re.split(r'\s{2,}|\t', line.strip())
             if len(parts) >= 3 and any(kw.lower() in parts[0].lower() for kw in MAJOR_KEYWORDS):
                 name = parts[0].strip()
                 due_date_text = parts[1].strip()
                 range_text = parts[2].strip()
                 due_date = parse_date(due_date_text)
-                range_disp = range_text if range_text != "-" else ""
+                range_disp = range_text if range_text and range_text not in ["-", ""] else ""
                 if due_date and is_major_check_item(name) and len(name) > 2:
                     key = (name, due_date, range_disp)
                     if key not in seen:
