@@ -72,32 +72,26 @@ def extract_due_dates_cr_ccs(lines):
 def extract_due_dates_abs(lines):
     due_items, seen = [], set()
     prev_name = ""
-    for i, line in enumerate(lines):
+    for line in lines:
         has_major = any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS)
-        # Range區間：抓日期數以2為單位處理（DUE + RANGE），如有就組成文字
+        # ABS格式標準：同行如有2日期（Due + RangeEnd），或有Range區段字串
+        range_match = re.search(r"(\d{2,4}-[A-Za-z]{3}-\d{2,4}|\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4})\s*[~\-–]\s*(\d{2,4}-[A-Za-z]{3}-\d{2,4}|\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4})", line)
         dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
-        if has_major and len(dates) == 2:
+        if has_major:
             namepure = remove_dates_from_name(line)
-            due_date = parse_date(dates[0])
-            range_start = dates[0]
-            range_end = dates[1]
-            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
+            due_date = parse_date(dates[0]) if dates else None
+            rangedisp = ""
+            if range_match:
+                range_start = range_match.group(1)
+                range_end = range_match.group(2)
                 rangedisp = f"{range_start} ~ {range_end}"
+            elif len(dates) == 2:
+                rangedisp = f"{dates[0]} ~ {dates[1]}"
+            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
                 key = (namepure, due_date, rangedisp)
                 if key not in seen:
                     seen.add(key)
                     due_items.append((namepure, due_date, rangedisp))
-            prev_name = line.strip()
-        elif has_major and len(dates) == 1:
-            namepure = remove_dates_from_name(line)
-            due_date = parse_date(dates[0])
-            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                key = (namepure, due_date, "")
-                if key not in seen:
-                    seen.add(key)
-                    due_items.append((namepure, due_date, ""))
-            prev_name = line.strip()
-        elif has_major:
             prev_name = line.strip()
         elif prev_name and len(dates) == 1:
             namepure = remove_dates_from_name(prev_name)
@@ -153,7 +147,6 @@ for pdf in pdf_files:
     due_list = extract_due_dates(pdf)
     for name, due_date, range_disp in due_list:
         days_left = (due_date - today).days if due_date else ""
-        # 只顯示Due Date已在設定天數內的資料，RANGE僅為附註
         if due_date and 0 <= days_left <= days_limit:
             all_results.append({
                 "檔案": os.path.basename(pdf),
