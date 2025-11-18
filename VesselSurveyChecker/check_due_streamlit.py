@@ -20,7 +20,7 @@ MAJOR_KEYWORDS = [
     "Tailshaft Survey", "Tail Shaft", "Propeller Shaft Condition Monitoring", "Propeller Shaft Survey",
     "Machinery items", "Hull items", "Cargo Gear Load Test", "BTS", "LL Annual Survey",
     "SC Annual Survey", "SE Annual Survey", "IAPP Annual Survey", "Iopp Annual Survey",
-    "BWM Annual Survey",
+    "BWM Annual Survey"
 ]
 CR_LOCATIONS = [
     "Xiamen", "Shenzhen", "Shanghai", "Keelung", "Kaohsiung", "Qingdao", "Tianjin",
@@ -76,12 +76,11 @@ def extract_due_dates_abs(lines):
     prev_name = ""
     for line in lines:
         has_major = any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS)
-        # ABS格式一律: 第1日期為DueDate, 若同行還有第2日期，組成Range Date區間
         dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
         rangedisp = ""
-        if has_major and len(dates) >= 1:
+        if has_major:
             namepure = remove_dates_from_name(line)
-            due_date = parse_date(dates[0])
+            due_date = parse_date(dates[0]) if len(dates) >= 1 else None
             if len(dates) >= 2:
                 rangedisp = f"{dates[0]} ~ {dates[1]}"
             if due_date and is_major_check_item(namepure) and len(namepure) > 2:
