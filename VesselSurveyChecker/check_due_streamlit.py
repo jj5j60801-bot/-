@@ -20,8 +20,6 @@ MAJOR_KEYWORDS = [
     "Tailshaft Survey", "Tail Shaft", "Propeller Shaft Condition Monitoring", "Propeller Shaft Survey",
     "Machinery items", "Hull items", "Cargo Gear Load Test", "BTS", "LL Annual Survey", "SC Annual Survey", "SE Annual Survey", "IAPP Annual Survey", "Iopp Annual Survey", "BWM Annual Survey"
 ]
-
-# 常見CR/CCS地名，可再自行補充
 CR_LOCATIONS = [
     "Xiamen", "Shenzhen", "Shanghai", "Keelung", "Kaohsiung", "Qingdao", "Tianjin",
     "Dalian", "Fuzhou", "Zhoushan", "Ningbo", "Hong Kong", "Taichung", "Tainan"
@@ -43,7 +41,6 @@ def remove_dates_from_name(name):
     return re.sub(pat, '', name).strip()
 
 def remove_location_from_name(name):
-    # 去除地名（開頭、中間或結尾都可，連帶多餘空格）
     pat = r"\b(" + "|".join(re.escape(loc) for loc in CR_LOCATIONS) + r")\b"
     return re.sub(pat, '', name).replace("  ", " ").strip()
 
@@ -66,10 +63,10 @@ def extract_due_dates_cr_ccs(lines):
             if len(dates) >= 1:
                 due_date = parse_date(dates[-1])
                 if due_date and is_major_check_item(nameclean) and len(nameclean) > 2:
-                    key = (nameclean, due_date)
+                    key = (nameclean, due_date, "")
                     if key not in seen:
                         seen.add(key)
-                        due_items.append((nameclean, due_date))
+                        due_items.append((nameclean, due_date, ""))
     return due_items
 
 def extract_due_dates_abs(lines):
@@ -77,16 +74,28 @@ def extract_due_dates_abs(lines):
     prev_name = ""
     for i, line in enumerate(lines):
         has_major = any(kw.lower() in line.lower() for kw in MAJOR_KEYWORDS)
+        # Range區間：抓日期數以2為單位處理（DUE + RANGE），如有就組成文字
         dates = re.findall(r"(\d{4}-\d{2}-\d{2}|\d{2}-[A-Za-z]{3}-\d{4}|\d{2}/\d{2}/\d{4})", line)
-        # 僅抓純Due Date(同行僅一組日期)，同行若帶Range/多個日期自動略過
-        if has_major and len(dates) == 1:
+        if has_major and len(dates) == 2:
+            namepure = remove_dates_from_name(line)
+            due_date = parse_date(dates[0])
+            range_start = dates[0]
+            range_end = dates[1]
+            if due_date and is_major_check_item(namepure) and len(namepure) > 2:
+                rangedisp = f"{range_start} ~ {range_end}"
+                key = (namepure, due_date, rangedisp)
+                if key not in seen:
+                    seen.add(key)
+                    due_items.append((namepure, due_date, rangedisp))
+            prev_name = line.strip()
+        elif has_major and len(dates) == 1:
             namepure = remove_dates_from_name(line)
             due_date = parse_date(dates[0])
             if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                key = (namepure, due_date)
+                key = (namepure, due_date, "")
                 if key not in seen:
                     seen.add(key)
-                    due_items.append((namepure, due_date))
+                    due_items.append((namepure, due_date, ""))
             prev_name = line.strip()
         elif has_major:
             prev_name = line.strip()
@@ -94,10 +103,10 @@ def extract_due_dates_abs(lines):
             namepure = remove_dates_from_name(prev_name)
             due_date = parse_date(dates[0])
             if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                key = (namepure, due_date)
+                key = (namepure, due_date, "")
                 if key not in seen:
                     seen.add(key)
-                    due_items.append((namepure, due_date))
+                    due_items.append((namepure, due_date, ""))
     return due_items
 
 def extract_due_dates_default(lines):
@@ -111,10 +120,10 @@ def extract_due_dates_default(lines):
             due_date = parse_date(match.group(1))
             namepure = remove_dates_from_name(prev_name)
             if due_date and is_major_check_item(namepure) and len(namepure) > 2:
-                key = (namepure, due_date)
+                key = (namepure, due_date, "")
                 if key not in seen:
                     seen.add(key)
-                    due_items.append((namepure, due_date))
+                    due_items.append((namepure, due_date, ""))
     return due_items
 
 def extract_due_dates(pdf_path):
@@ -142,15 +151,15 @@ pdf_files = [
 
 for pdf in pdf_files:
     due_list = extract_due_dates(pdf)
-    for name, due_date in due_list:
-        days_left = (due_date - today).days
-        if 0 <= days_left <= days_limit:
-            all_results.append({
-                "檔案": os.path.basename(pdf),
-                "項目名稱": name,
-                "到期日": due_date.strftime("%Y-%m-%d"),
-                "剩餘天數": days_left
-            })
+    for name, due_date, range_disp in due_list:
+        days_left = (due_date - today).days if due_date else ""
+        all_results.append({
+            "檔案": os.path.basename(pdf),
+            "項目名稱": name,
+            "到期日": due_date.strftime("%Y-%m-%d") if due_date else "",
+            "RANGE DATE": range_disp,
+            "剩餘天數": days_left
+        })
 
 df = pd.DataFrame(all_results)
 if df.empty:
@@ -164,10 +173,7 @@ else:
         selected_vessel = st.selectbox("請選擇船舶檔案（只顯示到期船名）", vessel_names)
         real_vessel_file = selected_vessel + ".pdf"
         vessel_df = df[df["檔案"] == real_vessel_file]
-        if not vessel_df.empty:
-            st.subheader(f"{selected_vessel} 檢驗到期明細 (主分類)")
-            st.dataframe(vessel_df)
-        else:
-            st.info("此船未找到符號主分類的項目。")
-    else:
-        st.info("目前無任何船舶到期檢驗。")
+        show_cols = ["項目名稱", "到期日", "RANGE DATE", "剩餘天數"]
+        vessel_df_show = vessel_df[show_cols] if all(c in vessel_df for c in show_cols) else vessel_df
+        st.subheader(f"{selected_vessel} 檢驗到期明細 (主分類)")
+        st.dataframe(vessel_df_show)
